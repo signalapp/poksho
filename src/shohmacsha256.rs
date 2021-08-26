@@ -5,7 +5,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, Mac, NewMac};
 use sha2::Sha256;
 use std::cmp;
 
@@ -30,7 +30,7 @@ pub struct ShoHmacSha256 {
 impl ShoApi for ShoHmacSha256 {
     fn new(label: &[u8]) -> ShoHmacSha256 {
         let mut sho = ShoHmacSha256 {
-            hasher: Hmac::<Sha256>::new_varkey(&[0; HASH_LEN]).unwrap(),
+            hasher: Hmac::<Sha256>::new_from_slice(&[0; HASH_LEN]).unwrap(),
             cv: [0; HASH_LEN],
             mode: Mode::RATCHETED,
         };
@@ -40,10 +40,10 @@ impl ShoApi for ShoHmacSha256 {
 
     fn absorb(&mut self, input: &[u8]) {
         if let Mode::RATCHETED = self.mode {
-            self.hasher = Hmac::<Sha256>::new_varkey(&self.cv).unwrap();
+            self.hasher = Hmac::<Sha256>::new_from_slice(&self.cv).unwrap();
             self.mode = Mode::ABSORBING;
         }
-        self.hasher.input(input);
+        self.hasher.update(input);
     }
 
     // called after absorb() only; streaming squeeze not yet supported
@@ -51,9 +51,9 @@ impl ShoApi for ShoHmacSha256 {
         if let Mode::RATCHETED = self.mode {
             panic!();
         }
-        self.hasher.input(&[0x00]);
+        self.hasher.update(&[0x00]);
         self.cv
-            .copy_from_slice(&self.hasher.clone().result().code()[..]);
+            .copy_from_slice(&self.hasher.clone().finalize().into_bytes());
         self.hasher.reset();
         self.mode = Mode::RATCHETED;
     }
@@ -63,22 +63,23 @@ impl ShoApi for ShoHmacSha256 {
             panic!();
         }
         let mut output = Vec::<u8>::new();
-        let output_hasher_prefix = Hmac::<Sha256>::new_varkey(&self.cv).unwrap();
+        let output_hasher_prefix = Hmac::<Sha256>::new_from_slice(&self.cv).unwrap();
         let mut i = 0;
         while i * HASH_LEN < outlen {
             let mut output_hasher = output_hasher_prefix.clone();
-            output_hasher.input(&(i as u64).to_be_bytes());
-            output_hasher.input(&[0x01]);
-            let digest = output_hasher.result().code();
+            output_hasher.update(&(i as u64).to_be_bytes());
+            output_hasher.update(&[0x01]);
+            let digest = output_hasher.finalize().into_bytes();
             let num_bytes = cmp::min(HASH_LEN, outlen - i * HASH_LEN);
             output.extend_from_slice(&digest[0..num_bytes]);
             i += 1
         }
 
         let mut next_hasher = output_hasher_prefix.clone();
-        next_hasher.input(&(outlen as u64).to_be_bytes());
-        next_hasher.input(&[0x02]);
-        self.cv.copy_from_slice(&next_hasher.result().code()[..]);
+        next_hasher.update(&(outlen as u64).to_be_bytes());
+        next_hasher.update(&[0x02]);
+        self.cv
+            .copy_from_slice(&next_hasher.finalize().into_bytes());
         self.mode = Mode::RATCHETED;
         output
     }
