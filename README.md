@@ -1,10 +1,3 @@
-# poksho
+**poksho has moved to [libsignal][],** under the crate name `poksho`, at version 0.7.1.
 
-This is some incomplete code used for testing.  
-
-Most of the cryptography here is going to change and has not been reviewed, so
-this project should not be used.
-
-
-
-
+[libsignal]: https://github.com/signalapp/libsignal
